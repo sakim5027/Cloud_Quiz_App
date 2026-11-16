@@ -1,24 +1,21 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:html_unescape/html_unescape.dart';
 
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Initialize once before runApp, after WidgetsFlutterBinding.ensureInitialized().
+
+  // Initialize Firebase before runApp.
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  // email/password come from the sign-in form; handle FirebaseAuthException in the UI.
-  await FirebaseAuth.instance.signInWithEmailAndPassword(
-    email: emailController.text.trim(),
-    password: passwordController.text,
-  );
-  // ref is the same DocumentReference used by the submission transaction.
-  final verified = await ref.get(const GetOptions(source: Source.server));
 
   runApp(const CloudQuizApp());
 }
@@ -30,7 +27,157 @@ class CloudQuizApp extends StatelessWidget {
     return MaterialApp(
       title: 'API-to-Cloud Quiz App',
       theme: ThemeData(primarySwatch: Colors.deepOrange),
-      home: const QuizScreen(),
+      home: const AuthGate(),
+    );
+  }
+}
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Scaffold(
+            body: Center(
+              child: Text('Authentication error: ${snapshot.error}'),
+            ),
+          );
+        }
+
+        if (snapshot.hasData) {
+          return const QuizScreen();
+        }
+
+        return const SignInScreen();
+      },
+    );
+  }
+}
+
+class SignInScreen extends StatefulWidget {
+  const SignInScreen({super.key});
+
+  @override
+  State<SignInScreen> createState() => _SignInScreenState();
+}
+
+class _SignInScreenState extends State<SignInScreen> {
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
+
+  bool _isLoading = false;
+  String _error = '';
+
+  Future<void> _signIn() async {
+    if (emailController.text.trim().isEmpty ||
+        passwordController.text.isEmpty) {
+      setState(() {
+        _error = 'Please enter your email and password.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = '';
+    });
+
+    try {
+      // Code provided by your professor.
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: emailController.text.trim(),
+        password: passwordController.text,
+      );
+
+      // AuthGate will automatically display QuizScreen.
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _error = 'Sign-in failed: ${e.code}';
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _error = 'Sign-in failed. Please try again.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Cloud Quiz Sign In')),
+      body: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'Sign In to Cloud Quiz',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 24),
+
+            TextField(
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                border: OutlineInputBorder(),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            if (_error.isNotEmpty)
+              Text(_error, style: const TextStyle(color: Colors.red)),
+
+            const SizedBox(height: 20),
+
+            ElevatedButton(
+              onPressed: _isLoading ? null : _signIn,
+              child: Text(_isLoading ? 'Signing In...' : 'Sign In'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -209,7 +356,19 @@ class _QuizScreenState extends State<QuizScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Cloud Quiz App: API Edition')),
+      appBar: AppBar(
+        title: const Text('Cloud Quiz App: API Edition'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: _isSyncing
+                ? null
+                : () async {
+                    await FirebaseAuth.instance.signOut();
+                  },
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
         child: _isLoading
