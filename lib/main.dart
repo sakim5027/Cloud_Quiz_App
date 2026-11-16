@@ -64,6 +64,7 @@ class AuthGate extends StatelessWidget {
   }
 }
 
+//SignInScreen allows users to sign in with email and password.
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
 
@@ -99,7 +100,10 @@ class _SignInScreenState extends State<SignInScreen> {
         password: passwordController.text,
       );
 
-      // AuthGate will automatically display QuizScreen.
+      //Print the signed-in user's UID.
+      debugPrint('Signed-in UID: ${FirebaseAuth.instance.currentUser?.uid}');
+
+      // AuthGate automatically displays QuizScreen.
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
 
@@ -111,6 +115,57 @@ class _SignInScreenState extends State<SignInScreen> {
 
       setState(() {
         _error = 'Sign-in failed. Please try again.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _signUp() async {
+    if (emailController.text.trim().isEmpty ||
+        passwordController.text.isEmpty) {
+      setState(() {
+        _error = 'Please enter your email and password.';
+      });
+      return;
+    }
+
+    if (passwordController.text.length < 6) {
+      setState(() {
+        _error = 'Password must be at least 6 characters.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = '';
+    });
+
+    try {
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: emailController.text.trim(),
+        password: passwordController.text,
+      );
+
+      debugPrint('Registered UID: ${FirebaseAuth.instance.currentUser?.uid}');
+
+      // AuthGate automatically displays QuizScreen.
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _error = 'Sign-up failed: ${e.code}';
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _error = 'Sign-up failed. Please try again.';
       });
     } finally {
       if (mounted) {
@@ -175,6 +230,13 @@ class _SignInScreenState extends State<SignInScreen> {
               onPressed: _isLoading ? null : _signIn,
               child: Text(_isLoading ? 'Signing In...' : 'Sign In'),
             ),
+
+            const SizedBox(height: 12),
+
+            ElevatedButton(
+              onPressed: _isLoading ? null : _signUp,
+              child: const Text('Sign Up'),
+            ),
           ],
         ),
       ),
@@ -182,6 +244,7 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 }
 
+//Question class represents a single quiz question with its text, correct answer, and options.
 class Question {
   final String questionText;
   final String correctAnswer;
@@ -208,6 +271,7 @@ class Question {
   }
 }
 
+//QuizScreen displays the quiz questions, handles user answers, and manages score synchronization.
 class QuizScreen extends StatefulWidget {
   const QuizScreen({super.key});
   @override
