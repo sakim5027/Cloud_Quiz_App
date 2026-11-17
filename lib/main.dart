@@ -254,63 +254,58 @@ class Question {
     required this.correctAnswer,
     required this.options,
   });
-  
-factory Question.fromJson(Map<String, dynamic> json) {
-  final unescape = HtmlUnescape();
 
-  // Check category, difficulty, and question type.
-  if (json['category'] != 'General Knowledge' ||
-      json['difficulty'] != 'easy' ||
-      json['type'] != 'multiple') {
-    throw FormatException('Invalid question category or type.');
+  factory Question.fromJson(Map<String, dynamic> json) {
+    final unescape = HtmlUnescape();
+
+    // Check category, difficulty, and question type.
+    if (json['category'] != 'General Knowledge' ||
+        json['difficulty'] != 'easy' ||
+        json['type'] != 'multiple') {
+      throw FormatException('Invalid question category or type.');
+    }
+
+    // Check that question and answer fields exist.
+    if (json['question'] is! String ||
+        json['correct_answer'] is! String ||
+        json['incorrect_answers'] is! List) {
+      throw FormatException('Invalid question data.');
+    }
+
+    var incorrect = json['incorrect_answers'] as List;
+
+    // Every question must have exactly 3 incorrect answers.
+    if (incorrect.length != 3 || incorrect.any((answer) => answer is! String)) {
+      throw FormatException('Expected 3 incorrect answers.');
+    }
+
+    var correct = json['correct_answer'] as String;
+
+    // Decode HTML special characters.
+    String clean(String val) => unescape.convert(val).trim();
+
+    var allOptions = [...incorrect.cast<String>().map(clean), clean(correct)];
+
+    // Reject empty questions or answers.
+    if (clean(json['question'] as String).isEmpty ||
+        allOptions.any((option) => option.isEmpty)) {
+      throw FormatException('Question or answer is empty.');
+    }
+
+    // Make sure all 4 answers are different after decoding.
+    if (allOptions.toSet().length != 4) {
+      throw FormatException('Duplicate answer choices.');
+    }
+
+    // Shuffle only once, not inside build().
+    allOptions.shuffle();
+
+    return Question(
+      questionText: clean(json['question'] as String),
+      correctAnswer: clean(correct),
+      options: allOptions,
+    );
   }
-
-  // Check that question and answer fields exist.
-  if (json['question'] is! String ||
-      json['correct_answer'] is! String ||
-      json['incorrect_answers'] is! List) {
-    throw FormatException('Invalid question data.');
-  }
-
-  var incorrect = json['incorrect_answers'] as List;
-
-  // Every question must have exactly 3 incorrect answers.
-  if (incorrect.length != 3 ||
-      incorrect.any((answer) => answer is! String)) {
-    throw FormatException('Expected 3 incorrect answers.');
-  }
-
-  var correct = json['correct_answer'] as String;
-
-  // Decode HTML special characters.
-  String clean(String val) => unescape.convert(val).trim();
-
-  var allOptions = [
-    ...incorrect.cast<String>().map(clean),
-    clean(correct),
-  ];
-
-  // Reject empty questions or answers.
-  if (clean(json['question'] as String).isEmpty ||
-      allOptions.any((option) => option.isEmpty)) {
-    throw FormatException('Question or answer is empty.');
-  }
-
-  // Make sure all 4 answers are different after decoding.
-  if (allOptions.toSet().length != 4) {
-    throw FormatException('Duplicate answer choices.');
-  }
-
-  // Shuffle only once, not inside build().
-  allOptions.shuffle();
-
-  return Question(
-    questionText: clean(json['question'] as String),
-    correctAnswer: clean(correct),
-    options: allOptions,
-  );
-}
-
 }
 
 //QuizScreen displays the quiz questions, handles user answers, and manages score synchronization.
@@ -338,99 +333,95 @@ class _QuizScreenState extends State<QuizScreen> {
     _loadQuizData();
   }
 
-  
-Future<void> _loadQuizData() async {
-  final roundId = _roundId;
+  Future<void> _loadQuizData() async {
+    final roundId = _roundId;
 
-  // Wait at least 5 seconds between API requests.
-  if (_lastApiRequest != null &&
-      DateTime.now().difference(_lastApiRequest!) <
-          const Duration(seconds: 5)) {
-    setState(() {
-      _error = 'Please wait 5 seconds before retrying.';
-      _isLoading = false;
-    });
-    return;
-  }
+    // Wait at least 5 seconds between API requests.
+    if (_lastApiRequest != null &&
+        DateTime.now().difference(_lastApiRequest!) <
+            const Duration(seconds: 5)) {
+      setState(() {
+        _error = 'Please wait 5 seconds before retrying.';
+        _isLoading = false;
+      });
+      return;
+    }
 
-  try {
-    final uri = Uri.parse(
-      'https://opentdb.com/api.php?amount=10&category=9&difficulty=easy&type=multiple',
-    );
+    try {
+      final uri = Uri.parse(
+        'https://opentdb.com/api.php?amount=10&category=9&difficulty=easy&type=multiple',
+      );
 
-    // Record when the API request begins.
-    _lastApiRequest = DateTime.now();
+      // Record when the API request begins.
+      _lastApiRequest = DateTime.now();
 
-    final response = await http.get(uri).timeout(
-      const Duration(seconds: 10),
-    );
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
 
-      // Check the API response format.
-      if (data is! Map<String, dynamic>) {
-        throw FormatException('Invalid API response.');
-      }
-
-      if (data['response_code'] == 0) {
-        // Check that results is a list.
-        if (data['results'] is! List) {
-          throw FormatException('Invalid results data.');
+        // Check the API response format.
+        if (data is! Map<String, dynamic>) {
+          throw FormatException('Invalid API response.');
         }
 
-        final results = data['results'] as List;
-
-        if (!mounted || roundId != _roundId) return;
-
-        // Require exactly 10 questions.
-        if (results.length != 10) {
-          throw FormatException(
-            'Expected 10 questions, but received ${results.length}.',
-          );
-        }
-
-        // Validate all questions before allowing gameplay.
-        final questions = results.map((q) {
-          if (q is! Map<String, dynamic>) {
-            throw FormatException('Invalid question format.');
+        if (data['response_code'] == 0) {
+          // Check that results is a list.
+          if (data['results'] is! List) {
+            throw FormatException('Invalid results data.');
           }
 
-          return Question.fromJson(q);
-        }).toList();
+          final results = data['results'] as List;
 
-        setState(() {
-          _questions = questions;
-          _error = '';
-          _isLoading = false;
-        });
+          if (!mounted || roundId != _roundId) return;
+
+          // Require exactly 10 questions.
+          if (results.length != 10) {
+            throw FormatException(
+              'Expected 10 questions, but received ${results.length}.',
+            );
+          }
+
+          // Validate all questions before allowing gameplay.
+          final questions = results.map((q) {
+            if (q is! Map<String, dynamic>) {
+              throw FormatException('Invalid question format.');
+            }
+
+            return Question.fromJson(q);
+          }).toList();
+
+          setState(() {
+            _questions = questions;
+            _error = '';
+            _isLoading = false;
+          });
+        } else {
+          if (!mounted || roundId != _roundId) return;
+
+          setState(() {
+            _error =
+                'Quiz API returned response code ${data['response_code']}. Please try again.';
+            _isLoading = false;
+          });
+        }
       } else {
         if (!mounted || roundId != _roundId) return;
 
         setState(() {
-          _error =
-              'Quiz API returned response code ${data['response_code']}. Please try again.';
+          _error = 'Server error: ${response.statusCode}';
           _isLoading = false;
         });
       }
-    } else {
+    } catch (e) {
       if (!mounted || roundId != _roundId) return;
 
       setState(() {
-        _error = 'Server error: ${response.statusCode}';
+        _error = 'Connection failed: $e';
         _isLoading = false;
       });
     }
-  } catch (e) {
-    if (!mounted || roundId != _roundId) return;
-
-    setState(() {
-      _error = 'Connection failed: $e';
-      _isLoading = false;
-    });
   }
-}
-
 
   void _answerQuestion(String option) {
     if (_answered) return;
@@ -489,22 +480,20 @@ Future<void> _loadQuizData() async {
     );
   }
 
+  void _retryQuiz() {
+    setState(() {
+      _isLoading = true;
+      _error = '';
+      _questions = [];
+      _currentIndex = 0;
+      _score = 0;
+      _answered = false;
+      _selectedOption = null;
+    });
 
-void _retryQuiz() {
-  setState(() {
-    _isLoading = true;
-    _error = '';
-    _questions = [];
-    _currentIndex = 0;
-    _score = 0;
-    _answered = false;
-    _selectedOption = null;
-  });
-
-  // Retry without changing the round ID.
-  _loadQuizData();
-}
-
+    // Retry without changing the round ID.
+    _loadQuizData();
+  }
 
   void _restart() {
     _roundId++;
