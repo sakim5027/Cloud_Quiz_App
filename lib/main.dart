@@ -323,13 +323,24 @@ class _QuizScreenState extends State<QuizScreen> {
   int _score = 0;
   bool _answered = false;
   String? _selectedOption;
+  List<String?> _selectedAnswers = [];
   bool _isSynced = false;
   bool _isSyncing = false;
-  int _roundId = 0;
+  late String _roundId;
   DateTime? _lastApiRequest;
   @override
   void initState() {
     super.initState();
+
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+
+    _roundId = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('attempts')
+        .doc()
+        .id;
+
     _loadQuizData();
   }
 
@@ -393,6 +404,7 @@ class _QuizScreenState extends State<QuizScreen> {
 
           setState(() {
             _questions = questions;
+            _selectedAnswers = List<String?>.filled(questions.length, null);
             _error = '';
             _isLoading = false;
           });
@@ -423,16 +435,23 @@ class _QuizScreenState extends State<QuizScreen> {
     }
   }
 
+  
   void _answerQuestion(String option) {
     if (_answered) return;
+
     setState(() {
       _answered = true;
       _selectedOption = option;
+
+      // Save the selected answer for review.
+      _selectedAnswers[_currentIndex] = option;
+
       if (option == _questions[_currentIndex].correctAnswer) {
         _score++;
       }
     });
   }
+
 
   void _nextQuestion() {
     setState(() {
@@ -495,13 +514,25 @@ class _QuizScreenState extends State<QuizScreen> {
     _loadQuizData();
   }
 
+  
   void _restart() {
-    _roundId++;
+    if (_isSyncing) return;
+
+    final uid = FirebaseAuth.instance.currentUser!.uid;
 
     setState(() {
+      // Generate a new ID for a new quiz round.
+      _roundId = FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('attempts')
+          .doc()
+          .id;
+
       _isLoading = true;
-      _error = ''; // Clear the previous error
+      _error = '';
       _questions = [];
+      _selectedAnswers = [];
       _currentIndex = 0;
       _score = 0;
       _answered = false;
@@ -512,6 +543,7 @@ class _QuizScreenState extends State<QuizScreen> {
 
     _loadQuizData();
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -552,7 +584,7 @@ class _QuizScreenState extends State<QuizScreen> {
                 ),
               )
             : _currentIndex >= _questions.length
-            ? Center(
+            ? SingleChildScrollView(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -569,6 +601,52 @@ class _QuizScreenState extends State<QuizScreen> {
                       style: const TextStyle(fontSize: 18),
                     ),
                     const SizedBox(height: 24),
+
+                    const Text(
+                      'Answer Review',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    ...List.generate(_questions.length, (index) {
+                      final question = _questions[index];
+                      final selected = _selectedAnswers[index];
+                      final correct = selected == question.correctAnswer;
+
+                      return Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${index + 1}. ${question.questionText}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text('Your Answer: ${selected ?? "No answer"}'),
+                              Text('Correct Answer: ${question.correctAnswer}'),
+                              Text(
+                                correct ? '✓ Correct' : '✗ Incorrect',
+                                style: TextStyle(
+                                  color: correct ? Colors.green : Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+
+                    const SizedBox(height: 24),
+
                     if (!_isSynced)
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
@@ -598,7 +676,7 @@ class _QuizScreenState extends State<QuizScreen> {
                       ),
                     const SizedBox(height: 16),
                     TextButton(
-                      onPressed: _restart,
+                      onPressed: _isSyncing ? null : _restart,
                       child: const Text('Play Again'),
                     ),
                   ],
