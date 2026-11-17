@@ -328,6 +328,7 @@ class _QuizScreenState extends State<QuizScreen> {
   bool _isSyncing = false;
   late String _roundId;
   DateTime? _lastApiRequest;
+  int _requestId = 0;
   @override
   void initState() {
     super.initState();
@@ -346,6 +347,7 @@ class _QuizScreenState extends State<QuizScreen> {
 
   Future<void> _loadQuizData() async {
     final roundId = _roundId;
+    final requestId = ++_requestId;
 
     // Wait at least 5 seconds between API requests.
     if (_lastApiRequest != null &&
@@ -384,7 +386,8 @@ class _QuizScreenState extends State<QuizScreen> {
 
           final results = data['results'] as List;
 
-          if (!mounted || roundId != _roundId) return;
+          if (!mounted || roundId != _roundId || requestId != _requestId)
+            return;
 
           // Require exactly 10 questions.
           if (results.length != 10) {
@@ -402,6 +405,10 @@ class _QuizScreenState extends State<QuizScreen> {
             return Question.fromJson(q);
           }).toList();
 
+          if (!mounted || roundId != _roundId || requestId != _requestId) {
+            return;
+          }
+
           setState(() {
             _questions = questions;
             _selectedAnswers = List<String?>.filled(questions.length, null);
@@ -409,7 +416,8 @@ class _QuizScreenState extends State<QuizScreen> {
             _isLoading = false;
           });
         } else {
-          if (!mounted || roundId != _roundId) return;
+          if (!mounted || roundId != _roundId || requestId != _requestId)
+            return;
 
           setState(() {
             _error =
@@ -418,7 +426,7 @@ class _QuizScreenState extends State<QuizScreen> {
           });
         }
       } else {
-        if (!mounted || roundId != _roundId) return;
+        if (!mounted || roundId != _roundId || requestId != _requestId) return;
 
         setState(() {
           _error = 'Server error: ${response.statusCode}';
@@ -426,7 +434,7 @@ class _QuizScreenState extends State<QuizScreen> {
         });
       }
     } catch (e) {
-      if (!mounted || roundId != _roundId) return;
+      if (!mounted || roundId != _roundId || requestId != _requestId) return;
 
       setState(() {
         _error = 'Connection failed: $e';
@@ -435,7 +443,6 @@ class _QuizScreenState extends State<QuizScreen> {
     }
   }
 
-  
   void _answerQuestion(String option) {
     if (_answered) return;
 
@@ -451,7 +458,6 @@ class _QuizScreenState extends State<QuizScreen> {
       }
     });
   }
-
 
   void _nextQuestion() {
     setState(() {
@@ -471,9 +477,12 @@ class _QuizScreenState extends State<QuizScreen> {
 
     // Create a simulated submission payload.
     final payload = {
-      'score': _score,
-      'totalQuestions': _questions.length,
-      'roundId': roundId,
+      'schemaVersion': 1,
+      'variant': 'A',
+      'categoryId': 9,
+      'questionCount': 10,
+      'correctCount': _score,
+      'submittedAt': FieldValue.serverTimestamp(),
     };
 
     setState(() {
@@ -505,6 +514,7 @@ class _QuizScreenState extends State<QuizScreen> {
       _error = '';
       _questions = [];
       _currentIndex = 0;
+      _selectedAnswers = [];
       _score = 0;
       _answered = false;
       _selectedOption = null;
@@ -514,7 +524,6 @@ class _QuizScreenState extends State<QuizScreen> {
     _loadQuizData();
   }
 
-  
   void _restart() {
     if (_isSyncing) return;
 
@@ -543,7 +552,6 @@ class _QuizScreenState extends State<QuizScreen> {
 
     _loadQuizData();
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -727,7 +735,9 @@ class _QuizScreenState extends State<QuizScreen> {
                           foregroundColor: Colors.black87,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
-                        onPressed: () => _answerQuestion(opt),
+                        onPressed: _answered
+                            ? null
+                            : () => _answerQuestion(opt),
                         child: Text(opt, style: const TextStyle(fontSize: 16)),
                       ),
                     );
