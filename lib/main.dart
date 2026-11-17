@@ -386,8 +386,9 @@ class _QuizScreenState extends State<QuizScreen> {
 
           final results = data['results'] as List;
 
-          if (!mounted || roundId != _roundId || requestId != _requestId)
+          if (!mounted || roundId != _roundId || requestId != _requestId) {
             return;
+          }
 
           // Require exactly 10 questions.
           if (results.length != 10) {
@@ -416,8 +417,9 @@ class _QuizScreenState extends State<QuizScreen> {
             _isLoading = false;
           });
         } else {
-          if (!mounted || roundId != _roundId || requestId != _requestId)
+          if (!mounted || roundId != _roundId || requestId != _requestId) {
             return;
+          }
 
           setState(() {
             _error =
